@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="A walk-through 360° photo tour of Haroldville. Works in any browser and in VR headsets.">
+<style>html,body{margin:0}body{font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Haroldville Tour</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Figtree:wght@400;500;600&display=swap">
+<script src="aframe.min.js"></script>
+<script>
+  AFRAME.registerComponent('tour-tick', { tick: function (t) { if (window.TOUR) window.TOUR.tick(t); } });
+</script>
+<style>
+  :root {
+    /* Layout: the house fills the screen; a slim title plate top-left, controls along the bottom, a scene drawer that slides up.
+       One deliberate dark look so the photos stay the brightest thing on screen. */
+    --plate: rgba(28, 18, 22, 0.78);
+    --plate-solid: #1c1216;
+    --line: rgba(232, 214, 190, 0.18);
+    --fg: #f3ebe0;
+    --muted: #c4b5a4;
+    --brass: #d4ad66;
+    --brass-ink: #2a1c08;
+    --display: 'Young Serif', Georgia, 'Times New Roman', serif;
+    --body: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body { background: #0b0809; color: var(--fg); font-family: var(--body); font-size: 15px; overflow: hidden; }
+  .shell { position: relative; height: 100%; }
+  .shell a-scene { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  .plate {
+    position: absolute; z-index: 5;
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    left: max(16px, env(safe-area-inset-left, 0px));
+    max-width: min(440px, calc(100% - 32px));
+    background: var(--plate); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px 11px; pointer-events: none;
+  }
+  .plate h1 { font-family: var(--display); font-weight: 400; font-size: 21px; margin: 0; letter-spacing: 0.005em; }
+  .plate .where { display: flex; align-items: baseline; gap: 10px; margin-top: 2px; min-width: 0; }
+  .plate .room { font-weight: 600; font-size: 15px; color: var(--brass); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .plate .count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: 0.04em; white-space: nowrap; }
+
+  .controls {
+    position: absolute; z-index: 5; display: flex; gap: 8px; flex-wrap: wrap;
+    left: max(16px, env(safe-area-inset-left, 0px));
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    max-width: calc(100% - 120px);
+  }
+  .ctl {
+    min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--plate); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    color: var(--fg); font: 500 14px var(--body); cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .ctl:hover { border-color: rgba(212, 173, 102, 0.6); }
+  .ctl:disabled { opacity: 0.45; cursor: default; }
+  .ctl svg { width: 18px; height: 18px; flex: none; }
+  .ctl.icon { width: 44px; padding: 0; justify-content: center; }
+  :focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+  .a-enter-vr { right: max(16px, env(safe-area-inset-right, 0px)) !important; bottom: calc(14px + env(safe-area-inset-bottom, 0px)) !important; }
+
+  .hint {
+    position: absolute; z-index: 4; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    background: var(--plate); border: 1px solid var(--line); border-radius: 999px; padding: 10px 18px;
+    font-size: 14px; pointer-events: none; transition: opacity 0.6s ease; text-align: center; max-width: calc(100% - 48px);
+  }
+  .hint.gone { opacity: 0; }
+
+  .loader {
+    position: absolute; z-index: 6; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+    background: var(--plate); border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; font-size: 13px;
+    display: flex; align-items: center; gap: 10px; pointer-events: none; font-variant-numeric: tabular-nums;
+  }
+  .bar { width: 110px; height: 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--brass); transition: width 0.15s linear; }
+
+  .drawer {
+    position: absolute; z-index: 8; left: 0; right: 0; bottom: 0; max-height: 72%;
+    background: var(--plate-solid); border-top: 1px solid var(--line); border-radius: 18px 18px 0 0;
+    display: flex; flex-direction: column;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 14px calc(14px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.5);
+  }
+  .drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; }
+  .drawer-head h2 { font-family: var(--display); font-weight: 400; font-size: 19px; margin: 0; }
+  .grid { overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding-bottom: 4px; }
+  .tile {
+    display: grid; gap: 6px; padding: 6px; border-radius: 12px; border: 1px solid transparent; background: rgba(255, 255, 255, 0.03);
+    color: var(--fg); font: 500 13px var(--body); text-align: left; cursor: pointer; min-width: 0;
+  }
+  .tile:hover { border-color: var(--line); }
+  .tile.here { border-color: var(--brass); }
+  .tile img { width: 100%; aspect-ratio: 2 / 1; max-width: 100%; object-fit: cover; border-radius: 7px; display: block; background: #2a1d22; }
+  .tile span { display: flex; justify-content: space-between; gap: 6px; min-width: 0; }
+  .tile b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 520px) {
+    .plate h1 { font-size: 18px; }
+    .ctl .lbl { display: none; }
+    .ctl { width: 44px; padding: 0; justify-content: center; }
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (prefers-reduced-motion: reduce) { .hint, .bar i { transition: none; } }
+</style>
+
+<div class="shell" id="shell">
+  <a-scene id="scene" embedded tour-tick
+    loading-screen="enabled: false"
+    xr-mode-ui="XRMode: vr"
+    device-orientation-permission-ui="enabled: false"
+    renderer="antialias: true; colorManagement: true; maxCanvasWidth: 2560; maxCanvasHeight: 2560">
+    <a-entity id="world" position="0 1.6 0"></a-entity>
+    <a-entity id="cam" camera="fov: 75" look-controls="magicWindowTrackingEnabled: false" position="0 1.6 0"></a-entity>
+    <a-entity id="handR" laser-controls="hand: right; model: false" raycaster="objects: .hs; far: 40; lineColor: #d4ad66; lineOpacity: 0.85"></a-entity>
+    <a-entity id="handL" laser-controls="hand: left; model: false" raycaster="objects: .hs; far: 40; lineColor: #d4ad66; lineOpacity: 0.85"></a-entity>
+  </a-scene>
+
+  <div class="plate" aria-live="polite">
+    <h1>Haroldville Tour</h1>
+    <div class="where"><span class="room" id="room">Loading…</span><span class="count" id="count"></span></div>
+  </div>
+
+  <div class="hint" id="hint">Drag to look around · click a ring to walk through</div>
+  <div class="loader" id="loader" hidden><span id="loadText">Loading</span><span class="bar"><i id="loadBar"></i></span></div>
+
+  <div class="controls">
+    <button class="ctl" id="backBtn" type="button" disabled aria-label="Back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg><span class="lbl">Back</span>
+    </button>
+    <button class="ctl" id="scenesBtn" type="button" aria-label="All rooms">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span class="lbl">All rooms</span>
+    </button>
+    <button class="ctl icon" id="fsBtn" type="button" aria-label="Full screen" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
+  </div>
+
+  <div class="drawer" id="drawer" hidden>
+    <div class="drawer-head"><h2>All rooms</h2><button class="ctl icon" id="closeDrawer" type="button" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="grid" id="grid"></div>
+  </div>
+</div>
+
+<script id="tour-data" type="application/json">{"name": "Haroldville Tour", "startId": "p:001_Haroldville_Parlour_Window.jpg:7618228", "scenes": [{"id": "p:001_Haroldville_Parlour_Window.jpg:7618228", "key": "s00", "name": "Parlour Window", "startYaw": -35.9, "hotspots": [{"type": "link", "yaw": -176, "pitch": -5.3, "label": "", "target": "p:01_Haroldville_Parlour.jpg:7126793"}, {"type": "link", "yaw": -137.9, "pitch": -1.7, "label": "", "target": "p:05_Haroldville_Hall_Mid_02.jpg:6982195"}]}, {"id": "p:01_Haroldville_Parlour.jpg:7126793", "key": "s01", "name": "Parlour", "startYaw": 139.1, "hotspots": [{"type": "link", "yaw": 4.9, "pitch": 39.9, "label": "", "target": "p:001_Haroldville_Parlour_Window.jpg:7618228"}, {"type": "link", "yaw": -178.4, "pitch": 2.8, "label": "", "target": "p:05_Haroldville_Hall_Mid_02.jpg:6982195"}, {"type": "link", "yaw": -56.2, "pitch": 8.4, "label": "", "target": "p:001_Haroldville_Parlour_Window.jpg:7618228"}]}, {"id": "p:02_Haroldville_Dining.jpg:7417562", "key": "s02", "name": "Dining", "startYaw": 0, "hotspots": [{"type": "link", "yaw": -100.7, "pitch": 6.6, "label": "", "target": "p:04_Haroldville_Hall_Stairs_01.jpg:7085574"}, {"type": "link", "yaw": -2.8, "pitch": -2.9, "label": "", "target": "p:03_Haroldville_Dining_Window_02.jpg:7723247"}]}, {"id": "p:03_Haroldville_Dining_Window_02.jpg:7723247", "key": "s03", "name": "Dining Window", "startYaw": 0, "hotspots": [{"type": "link", "yaw": 145.7, "pitch": -2.3, "label": "", "target": "p:04_Haroldville_Hall_Stairs_01.jpg:7085574"}]}, {"id": "p:04_Haroldville_Hall_Stairs_01.jpg:7085574", "key": "s04", "name": "Hall Stairs", "startYaw": 0, "hotspots": [{"type": "link", "yaw": -16.6, "pitch": 13.5, "label": "", "target": "p:05_Haroldville_Hall_Mid_02.jpg:6982195"}, {"type": "link", "yaw": 79.3, "pitch": -6.6, "label": "", "target": "p:02_Haroldville_Dining.jpg:7417562"}, {"type": "link", "yaw": -178.4, "pitch": -12.7, "label": "", "target": "p:06_Haroldville_Kitchen_01.jpg:6826290"}, {"type": "link", "yaw": -3.8, "pitch": -3.1, "label": "", "target": "p:05_Haroldville_Hall_Mid_02.jpg:6982195"}]}, {"id": "p:05_Haroldville_Hall_Mid_02.jpg:6982195", "key": "s05", "name": "Hall Mid", "startYaw": 0, "hotspots": [{"type": "link", "yaw": 66.2, "pitch": -13.9, "label": "", "target": "p:01_Haroldville_Parlour.jpg:7126793"}, {"type": "link", "yaw": 163.4, "pitch": -13.5, "label": "", "target": "p:04_Haroldville_Hall_Stairs_01.jpg:7085574"}, {"type": "link", "yaw": 169.9, "pitch": 18.3, "label": "", "target": "p:09_Haroldville_Landing.jpg:7417359"}, {"type": "link", "yaw": 132.6, "pitch": -4, "label": "", "target": "p:02_Haroldville_Dining.jpg:7417562"}]}, {"id": "p:06_Haroldville_Kitchen_01.jpg:6826290", "key": "s06", "name": "Kitchen", "startYaw": 0, "hotspots": [{"type": "link", "yaw": 79.1, "pitch": -4, "label": "", "target": "p:07_Haroldville_Back_01.jpg:8092768"}, {"type": "link", "yaw": -4.1, "pitch": 3.2, "label": "", "target": "p:04_Haroldville_Hall_Stairs_01.jpg:7085574"}]}, {"id": "p:07_Haroldville_Back_01.jpg:8092768", "key": "s07", "name": "Back", "startYaw": 0, "hotspots": [{"type": "link", "yaw": 6.1, "pitch": -7.3, "label": "", "target": "p:08_Haroldville_Back_Wall_02.jpg:8167939"}, {"type": "link", "yaw": 122.9, "pitch": -1.9, "label": "", "target": "p:06_Haroldville_Kitchen_01.jpg:6826290"}]}, {"id": "p:08_Haroldville_Back_Wall_02.jpg:8167939", "key": "s08", "name": "Back Wall", "startYaw": 0, "hotspots": [{"type": "link", "yaw": -178.8, "pitch": -4.3, "label": "", "target": "p:07_Haroldville_Back_01.jpg:8092768"}]}, {"id": "p:09_Haroldville_Landing.jpg:7417359", "key": "s09", "name": "Landing", "startYaw": 0, "hotspots": [{"type": "link", "yaw": 175, "pitch": -4.7, "label": "", "target": "p:10_Haroldville_Bathroom.jpg:6468001"}, {"type": "link", "yaw": 2.5, "pitch": 18.1, "label": "", "target": "p:11_Haroldville_BRLanding.jpg:6725673"}]}, {"id": "p:10_Haroldville_Bathroom.jpg:6468001", "key": "s10", "name": "Bathroom", "startYaw": 0, "hotspots": [{"type": "link", "yaw": -114.2, "pitch": -3.7, "label": "", "target": "p:09_Haroldville_Landing.jpg:7417359"}]}, {"id": "p:11_Haroldville_BRLanding.jpg:6725673", "key": "s11", "name": "BR Landing", "startYaw": 0, "hotspots": [{"type": "link", "yaw": -69.4, "pitch": -6.4, "label": "", "target": "p:12_Haroldville_M&DBR_01.jpg:7062504"}, {"type": "link", "yaw": -166.8, "pitch": -2.4, "label": "", "target": "p:14_Haroldville_GBR_02.jpg:6775718"}, {"type": "link", "yaw": 6.8, "pitch": -24.6, "label": "", "target": "p:09_Haroldville_Landing.jpg:7417359"}, {"type": "link", "yaw": 16.2, "pitch": 14.6, "label": "", "target": "p:15_Haroldville_TopLanding.jpg:6173065"}]}, {"id": "p:12_Haroldville_M&DBR_01.jpg:7062504", "key": "s12", "name": "M&DBR", "startYaw": 0, "hotspots": [{"type": "link", "yaw": 122.8, "pitch": -0.7, "label": "", "target": "p:11_Haroldville_BRLanding.jpg:6725673"}]}, {"id": "p:13_Haroldville_GBR_01.jpg:6864979", "key": "s13", "name": "GBR 01", "startYaw": 0, "hotspots": [{"type": "link", "yaw": 168.7, "pitch": -3.3, "label": "", "target": "p:14_Haroldville_GBR_02.jpg:6775718"}, {"type": "link", "yaw": -156.8, "pitch": -2.8, "label": "", "target": "p:11_Haroldville_BRLanding.jpg:6725673"}]}, {"id": "p:14_Haroldville_GBR_02.jpg:6775718", "key": "s14", "name": "GBR 02", "startYaw": 0, "hotspots": [{"type": "link", "yaw": -1, "pitch": -4, "label": "", "target": "p:13_Haroldville_GBR_01.jpg:6864979"}]}, {"id": "p:15_Haroldville_TopLanding.jpg:6173065", "key": "s15", "name": "Top Landing", "startYaw": 0, "hotspots": [{"type": "link", "yaw": -18.7, "pitch": -23.8, "label": "", "target": "p:11_Haroldville_BRLanding.jpg:6725673"}, {"type": "link", "yaw": -10.7, "pitch": 23.8, "label": "", "target": "p:16_Haroldville_Topper_BRL.jpg:6510715"}]}, {"id": "p:16_Haroldville_Topper_BRL.jpg:6510715", "key": "s16", "name": "Topper BRL", "startYaw": 0, "hotspots": [{"type": "link", "yaw": -174.9, "pitch": -6.9, "label": "", "target": "p:17_Haroldville_Topper_Door_01.jpg:6329370"}, {"type": "link", "yaw": -8.6, "pitch": -34.9, "label": "", "target": "p:15_Haroldville_TopLanding.jpg:6173065"}]}, {"id": "p:17_Haroldville_Topper_Door_01.jpg:6329370", "key": "s17", "name": "Topper Door", "startYaw": 0, "hotspots": [{"type": "link", "yaw": 10.8, "pitch": -4.5, "label": "", "target": "p:18_Haroldville_Topper_Mid_02.jpg:7162648"}, {"type": "link", "yaw": 102.5, "pitch": -5.5, "label": "", "target": "p:16_Haroldville_Topper_BRL.jpg:6510715"}]}, {"id": "p:18_Haroldville_Topper_Mid_02.jpg:7162648", "key": "s18", "name": "Topper Mid", "startYaw": 0, "hotspots": [{"type": "link", "yaw": -3.7, "pitch": 6.1, "label": "", "target": "p:19_Haroldville_Topper_Window_03.jpg:6475788"}, {"type": "link", "yaw": 125.4, "pitch": -1.5, "label": "", "target": "p:17_Haroldville_Topper_Door_01.jpg:6329370"}]}, {"id": "p:19_Haroldville_Topper_Window_03.jpg:6475788", "key": "s19", "name": "Topper Window", "startYaw": 0, "hotspots": [{"type": "link", "yaw": -178.3, "pitch": 2.6, "label": "", "target": "p:18_Haroldville_Topper_Mid_02.jpg:7162648"}]}]}</script>
+<script>
+(function () {
+  'use strict';
+  const THREE = AFRAME.THREE;
+  const TOUR = JSON.parse(document.getElementById('tour-data').textContent);
+  const R = 9, DEG = Math.PI / 180;
+  const $ = (s) => document.querySelector(s);
+  const sceneEl = $('#scene'), worldEl = $('#world');
+  const byId = (id) => TOUR.scenes.find((s) => s.id === id);
+  const indexOf = (s) => TOUR.scenes.indexOf(s);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  const state = { currentId: null, history: [] };
+  let worldRotY = 0, useLite = true, skyMesh, skyTex = null, fadeMesh, toastMesh;
+  let hsEls = [], hsGroups = [];
+  const fade = { value: 1, from: 1, to: 1, start: 0, dur: 0, resolve: null };
+  const toast = { until: 0, shown: 0 };
+
+  // ---------- photo fetching (with progress, small cache, neighbour preload) ----------
+  const cache = new Map();               // url -> Promise<Blob>
+  const CACHE_MAX = 8;
+  function photoUrl(sc) { return (useLite ? 'lite/' : 'photos/') + sc.key + '.jpg'; }
+  function fetchBlob(url, onProgress) {
+    if (cache.has(url)) { const p = cache.get(url); cache.delete(url); cache.set(url, p); return p; }
+    const p = (async () => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('http ' + res.status);
+      const total = +res.headers.get('content-length') || 0;
+      if (!res.body || !total || !onProgress) return res.blob();
+      const reader = res.body.getReader(); const parts = []; let got = 0;
+      for (;;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); got += value.length; onProgress(got / total); }
+      return new Blob(parts, { type: 'image/jpeg' });
+    })();
+    p.catch(() => cache.delete(url));
+    cache.set(url, p);
+    while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
+    return p;
+  }
+  function preloadNeighbours(sc) {
+    const targets = [...new Set(sc.hotspots.filter((h) => h.type === 'link').map((h) => h.target))].map(byId).filter(Boolean);
+    let i = 0;
+    const next = () => { if (i >= targets.length || byId(state.currentId) !== sc) return; fetchBlob(photoUrl(targets[i++])).catch(() => {}).then(next); };
+    setTimeout(next, 600);
+  }
+  async function blobToCanvas(blob) {
+    const maxTex = sceneEl.renderer.capabilities.maxTextureSize || 4096;
+    let bmp;
+    try { bmp = await createImageBitmap(blob); }
+    catch (e) { const u = URL.createObjectURL(blob); try { const im = new Image(); im.src = u; await im.decode(); bmp = im; } finally { setTimeout(() => URL.revokeObjectURL(u), 0); } }
+    let W = bmp.width, H = bmp.height;
+    if (W > maxTex) { H = Math.round(H * maxTex / W); W = maxTex; }
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    c.getContext('2d').drawImage(bmp, 0, 0, W, H);
+    if (bmp.close) bmp.close();
+    return c;
+  }
+
+  // ---------- 3D helpers ----------
+  function srgb(t) { t.colorSpace = THREE.SRGBColorSpace; return t; }
+  function rr(ctx, x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h); ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r); ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+  }
+  function labelMesh(text, worldH, edge) {
+    const fs = 46, h = 84, padX = 30;
+    const c = document.createElement('canvas'); const ctx = c.getContext('2d');
+    const font = `600 ${fs}px Figtree, system-ui, sans-serif`;
+    ctx.font = font;
+    let t = text; while (ctx.measureText(t).width > 860 && t.length > 4) t = t.slice(0, -2);
+    if (t !== text) t = t.trimEnd() + '…';
+    const w = Math.ceil(ctx.measureText(t).width + padX * 2);
+    c.width = w; c.height = h; ctx.font = font; ctx.textBaseline = 'middle';
+    rr(ctx, 1, 1, w - 2, h - 2, (h - 2) / 2); ctx.fillStyle = 'rgba(28,18,22,0.84)'; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = edge; ctx.stroke();
+    ctx.fillStyle = '#f6eee2'; ctx.fillText(t, padX, h / 2 + 2);
+    const tex = srgb(new THREE.CanvasTexture(c)); tex.anisotropy = 4;
+    return new THREE.Mesh(new THREE.PlaneGeometry(worldH * w / h, worldH), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  }
+  function hotspotObject(h) {
+    const g = new THREE.Group();
+    const brass = 0xd4ad66;
+    const mat = (color, op) => new THREE.MeshBasicMaterial({ color, transparent: op < 1, opacity: op, depthWrite: op >= 1, side: THREE.DoubleSide });
+    if (h.type === 'link') {
+      g.add(new THREE.Mesh(new THREE.CircleGeometry(0.22, 48), mat(0x1c1216, 0.5)));
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.29, 64), mat(brass, 1)); ring.position.z = 0.001; g.add(ring);
+      const s = new THREE.Shape();
+      s.moveTo(-0.1, -0.04); s.lineTo(0, 0.07); s.lineTo(0.1, -0.04); s.lineTo(0.065, -0.04); s.lineTo(0, 0.025); s.lineTo(-0.065, -0.04); s.closePath();
+      const chev = new THREE.Mesh(new THREE.ShapeGeometry(s), mat(brass, 1)); chev.position.set(0, -0.01, 0.002); g.add(chev);
+      const t = byId(h.target);
+      const lab = labelMesh(h.label || (t ? t.name : ''), 0.24, 'rgba(212,173,102,0.9)'); lab.position.set(0, -0.5, 0); g.add(lab);
+    } else {
+      g.add(new THREE.Mesh(new THREE.CircleGeometry(0.06, 32), mat(0xffffff, 1)));
+      g.add(new THREE.Mesh(new THREE.RingGeometry(0.08, 0.105, 48), mat(brass, 1)));
+      const stem = new THREE.Mesh(new THREE.PlaneGeometry(0.014, 0.17), mat(brass, 0.8)); stem.position.y = 0.2; g.add(stem);
+      const lab = labelMesh(h.label || '', 0.24, 'rgba(243,235,224,0.8)'); lab.position.set(0, 0.4, 0); g.add(lab);
+    }
+    return g;
+  }
+  function disposeObj(o) { o.traverse((n) => { if (n.geometry) n.geometry.dispose(); if (n.material) { if (n.material.map) n.material.map.dispose(); n.material.dispose(); } }); }
+  function dirFrom(yaw, pitch) { const y = yaw * DEG, p = pitch * DEG; return new THREE.Vector3(-Math.sin(y) * Math.cos(p), Math.sin(p), -Math.cos(y) * Math.cos(p)); }
+
+  function buildHotspots() {
+    for (const el of hsEls) { const m = el.getObject3D('mesh'); if (m) disposeObj(m); el.parentNode && el.parentNode.removeChild(el); }
+    hsEls = []; hsGroups = [];
+    const sc = byId(state.currentId); if (!sc) return;
+    for (const h of sc.hotspots) {
+      if (h.type === 'link' && !byId(h.target)) continue;
+      const el = document.createElement('a-entity'); el.classList.add('hs');
+      const p = dirFrom(h.yaw, h.pitch).multiplyScalar(R);
+      el.setAttribute('position', { x: p.x, y: p.y, z: p.z });
+      el.setAttribute('rotation', { x: h.pitch, y: h.yaw, z: 0 });
+      const g = hotspotObject(h); g.userData.hs = h;
+      el.setObject3D('mesh', g); g.traverse((n) => { n.el = el; });
+      el.addEventListener('click', () => { if (sceneEl.is('vr-mode')) activate(h); });
+      el.addEventListener('mouseenter', () => g.scale.setScalar(1.15));
+      el.addEventListener('mouseleave', () => g.scale.setScalar(1));
+      worldEl.appendChild(el); hsEls.push(el); hsGroups.push(g);
+    }
+  }
+  function setSky(canvas) {
+    const tex = srgb(new THREE.CanvasTexture(canvas));
+    tex.anisotropy = Math.min(8, sceneEl.renderer.capabilities.getMaxAnisotropy());
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    skyMesh.material.map = tex; skyMesh.material.color.set(0xffffff); skyMesh.material.needsUpdate = true;
+    if (skyTex) skyTex.dispose(); skyTex = tex;
+  }
+  function toastTexture(name, sub) {
+    const W = 1200, H = 220, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    rr(ctx, 2, 2, W - 4, H - 4, 34); ctx.fillStyle = 'rgba(28,18,22,0.88)'; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(212,173,102,0.7)'; ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '72px "Young Serif", Georgia, serif'; ctx.fillStyle = '#f6eee2'; ctx.fillText(name, W / 2, 90);
+    ctx.font = '600 32px Figtree, system-ui, sans-serif'; ctx.fillStyle = '#d4ad66'; ctx.fillText(sub, W / 2, 162);
+    return srgb(new THREE.CanvasTexture(c));
+  }
+  function fadeTo(v, ms) {
+    return new Promise((res) => {
+      if (fade.resolve) fade.resolve();
+      if (!ms) { fade.value = fade.to = v; fade.dur = 0; res(); return; }
+      fade.from = fade.value; fade.to = v; fade.start = performance.now(); fade.dur = ms; fade.resolve = res;
+    });
+  }
+  function activeCam() { const r = sceneEl.renderer; return (r.xr && r.xr.isPresenting) ? r.xr.getCamera() : sceneEl.camera; }
+  function camYaw() { const d = new THREE.Vector3(0, 0, -1).transformDirection(activeCam().matrixWorld); return Math.atan2(-d.x, -d.z) / DEG; }
+
+  // ---------- navigation ----------
+  let navToken = 0;
+  async function goTo(id, opts) {
+    opts = opts || {};
+    const sc = byId(id); if (!sc) return;
+    const tok = ++navToken;
+    if (opts.push !== false && state.currentId && state.currentId !== id) state.history.push(state.currentId);
+    $('#room').textContent = sc.name;
+    $('#count').textContent = (indexOf(sc) + 1) + ' of ' + TOUR.scenes.length;
+    $('#backBtn').disabled = !state.history.length;
+    const fadeOut = fadeTo(1, opts.instant ? 0 : 220);
+    const url = photoUrl(sc);
+    let shown = false;
+    const showTimer = setTimeout(() => { shown = true; $('#loader').hidden = false; $('#loadText').textContent = 'Loading ' + sc.name; }, 250);
+    let canvas;
+    try {
+      const blob = await fetchBlob(url, (f) => { $('#loadBar').style.width = Math.round(f * 100) + '%'; });
+      if (tok !== navToken) return;
+      canvas = await blobToCanvas(blob);
+    } catch (e) {
+      clearTimeout(showTimer);
+      $('#loader').hidden = false; $('#loadText').textContent = 'Couldn’t load this room. Check the connection and try again.'; $('#loadBar').style.width = '0';
+      await fadeTo(0, 200); return;
+    }
+    clearTimeout(showTimer);
+    await fadeOut;
+    if (tok !== navToken) return;
+    setSky(canvas);
+    state.currentId = sc.id;
+    worldRotY = camYaw() - (sc.startYaw || 0);
+    worldEl.object3D.rotation.y = worldRotY * DEG;
+    buildHotspots();
+    $('#loader').hidden = true; $('#loadBar').style.width = '0';
+    renderGrid();
+    const m = toastMesh.material; if (m.map) m.map.dispose();
+    m.map = toastTexture(sc.name, (indexOf(sc) + 1) + ' OF ' + TOUR.scenes.length + (state.history.length ? '  ·  B / Y TO GO BACK' : '')); m.needsUpdate = true;
+    toast.shown = performance.now(); toast.until = toast.shown + 2400;
+    await fadeTo(0, opts.instant ? 450 : 320);
+    preloadNeighbours(sc);
+  }
+  function back() { const prev = state.history.pop(); if (prev) goTo(prev, { push: false }); }
+  function activate(h) { if (h.type === 'link' && byId(h.target)) { dismissHint(); goTo(h.target); } }
+
+  // ---------- drawer ----------
+  function renderGrid() {
+    $('#grid').innerHTML = TOUR.scenes.map((s, i) =>
+      '<button type="button" class="tile' + (s.id === state.currentId ? ' here' : '') + '" data-id="' + esc(s.id) + '">' +
+      '<img alt="" loading="lazy" src="thumbs/' + s.key + '.jpg"><span><b>' + esc(s.name) + '</b><em>' + (i + 1) + '</em></span></button>').join('');
+  }
+  function openDrawer(open) { $('#drawer').hidden = !open; if (open) { const here = $('#grid .here'); if (here) here.scrollIntoView({ block: 'nearest' }); } }
+  $('#scenesBtn').addEventListener('click', () => openDrawer($('#drawer').hidden));
+  $('#closeDrawer').addEventListener('click', () => openDrawer(false));
+  $('#grid').addEventListener('click', (e) => { const b = e.target.closest('[data-id]'); if (!b) return; openDrawer(false); dismissHint(); goTo(b.getAttribute('data-id')); });
+  $('#backBtn').addEventListener('click', back);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') openDrawer(false); });
+
+  const shell = $('#shell');
+  if (shell.requestFullscreen) {
+    $('#fsBtn').hidden = false;
+    $('#fsBtn').addEventListener('click', () => {
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      else shell.requestFullscreen().catch(() => { $('#fsBtn').hidden = true; });
+    });
+  }
+
+  let hintGone = false;
+  function dismissHint() { if (hintGone) return; hintGone = true; $('#hint').classList.add('gone'); }
+
+  // ---------- 2D picking, hover, zoom ----------
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  function setRay(e) { const r = sceneEl.canvas.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); ray.setFromCamera(ndc, sceneEl.camera); }
+  function pick() { for (const hit of ray.intersectObjects(hsGroups, true)) { let o = hit.object; while (o && !o.userData.hs) o = o.parent; if (o) return o; } return null; }
+  let pendingHover = null, hoverObj = null;
+
+  function setFov(f) { const cam = sceneEl.camera; cam.fov = Math.max(35, Math.min(90, f)); cam.updateProjectionMatrix(); }
+
+  // ---------- per frame ----------
+  window.TOUR = {
+    tick: function () {
+      const now = performance.now();
+      if (fade.dur) {
+        const k = Math.min(1, (now - fade.start) / fade.dur);
+        fade.value = fade.from + (fade.to - fade.from) * (k * k * (3 - 2 * k));
+        if (k >= 1) { fade.dur = 0; fade.value = fade.to; if (fade.resolve) { const r = fade.resolve; fade.resolve = null; r(); } }
+      }
+      if (fadeMesh) { fadeMesh.material.opacity = fade.value; fadeMesh.visible = fade.value > 0.002; }
+      if (toastMesh) {
+        let o = 0;
+        if (sceneEl.is('vr-mode') && now < toast.until) o = Math.max(0, Math.min(1, (now - toast.shown) / 250, (toast.until - now) / 450));
+        toastMesh.material.opacity = o; toastMesh.visible = o > 0.01;
+      }
+      if (pendingHover && !sceneEl.is('vr-mode')) {
+        setRay(pendingHover); pendingHover = null;
+        const o = pick();
+        if (o !== hoverObj) {
+          if (hoverObj) hoverObj.scale.setScalar(1);
+          if (o) o.scale.setScalar(1.12);
+          hoverObj = o; sceneEl.canvas.style.cursor = o ? 'pointer' : '';
+        }
+      }
+    }
+  };
+
+  // ---------- boot ----------
+  function boot() {
+    const renderer = sceneEl.renderer;
+    const maxTex = renderer.capabilities.maxTextureSize || 4096;
+    const small = Math.min(screen.width, screen.height) < 700;
+    useLite = maxTex < 8192 || small || (navigator.deviceMemory && navigator.deviceMemory <= 4);
+
+    const geo = new THREE.SphereGeometry(50, 96, 64); geo.scale(-1, 1, 1);
+    skyMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x0b0809 }));
+    skyMesh.rotation.y = -Math.PI / 2;
+    worldEl.setObject3D('sky', skyMesh);
+
+    const cam = sceneEl.camera;
+    fadeMesh = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 16), new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, transparent: true, opacity: 1, depthTest: false, depthWrite: false }));
+    fadeMesh.renderOrder = 1000;
+    toastMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8 * 220 / 1200), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthTest: false, depthWrite: false }));
+    toastMesh.position.set(0, -0.28, -1.4); toastMesh.renderOrder = 999; toastMesh.visible = false;
+    cam.add(fadeMesh); cam.add(toastMesh);
+
+    const canvas = sceneEl.canvas;
+    let down = null;
+    canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+    canvas.addEventListener('pointerup', (e) => {
+      if (!down) return;
+      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+      if (moved > 6) dismissHint();
+      const ok = moved < 6 && performance.now() - down.t < 700; down = null;
+      if (!ok || sceneEl.is('vr-mode')) return;
+      setRay(e); const o = pick(); if (o) activate(o.userData.hs);
+    });
+    canvas.addEventListener('pointermove', (e) => { if (!down) pendingHover = { clientX: e.clientX, clientY: e.clientY }; });
+    canvas.addEventListener('wheel', (e) => { e.preventDefault(); setFov(sceneEl.camera.fov + e.deltaY * 0.03); }, { passive: false });
+    let pinch = null;
+    canvas.addEventListener('touchstart', (e) => { if (e.touches.length === 2) pinch = { d: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), fov: sceneEl.camera.fov }; }, { passive: true });
+    canvas.addEventListener('touchmove', (e) => { if (pinch && e.touches.length === 2) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); setFov(pinch.fov * pinch.d / d); } }, { passive: true });
+    canvas.addEventListener('touchend', () => { pinch = null; }, { passive: true });
+
+    for (const id of ['#handR', '#handL']) { const h = $(id); h.addEventListener('bbuttondown', back); h.addEventListener('ybuttondown', back); }
+    sceneEl.addEventListener('enter-vr', () => { openDrawer(false); dismissHint(); setFov(75); });
+
+    renderGrid();
+    const fromHash = (location.hash || '').slice(1);
+    const startScene = TOUR.scenes.find((s) => s.key === fromHash) || byId(TOUR.startId) || TOUR.scenes[0];
+    const go = () => goTo(startScene.id, { push: false, instant: true });
+    Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 1200))]).then(go, go);
+    setTimeout(dismissHint, 9000);
+  }
+  if (sceneEl.hasLoaded) boot(); else sceneEl.addEventListener('loaded', boot);
+})();
+</script>
+
+</body>
+</html>
